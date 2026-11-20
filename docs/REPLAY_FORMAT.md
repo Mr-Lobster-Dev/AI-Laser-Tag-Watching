@@ -19,7 +19,7 @@ The simulator and training code are done; the website only needs to read replay 
 
 | Key | Meaning |
 |-----|---------|
-| `version` | Format version (1). |
+| `version` | Format version (2: adds 60 FPS `motion`). |
 | `match` | Match number. |
 | `trained_matches` | Matches the networks had trained on before this one. |
 | `dt` | Seconds per step (0.1). |
@@ -27,7 +27,8 @@ The simulator and training code are done; the website only needs to read replay 
 | `arena` | `width` 30, `depth` 20, `wall_height` 3, `boxes`: `[x0, y0, z0, x1, y1, z1, kind]` with kind in `wall`, `cover`, `platform`, `stair`. Units are metres; z is up. |
 | `agents` | 8 entries: `{id, team: "green" or "pink", shape: "sphere" or "cube"}`. Ids 0-3 green, 4-7 pink. |
 | `final_scores` | `{green, pink, per_agent: [8], winner: "green" / "pink" / "draw"}`. |
-| `frames` | Per-step state, flat arrays, index `[step * 8 + agent]` (see below). |
+| `frames` | Per-step state at 10 Hz (the simulation rate), flat arrays, index `[step * 8 + agent]` (see below). |
+| `motion` | Player movement at **60 FPS** for smooth playback (see below). |
 | `shots` | List of `{step, shooter, target, tag, end}`. `target` is an agent id or -1 (hit a wall or nothing); `tag` is true when it scored; `end` is the beam end point `[x, y, z]`. The beam starts at the shooter's eye. |
 | `network` | Network activations for the inspector panel (see below). |
 
@@ -49,6 +50,23 @@ All arrays are flat, row-major. `N = 8` agents.
 Body geometry for drawing: radius 0.3 m, standing height 1.75 m (crouched 1.15 m),
 eye height 1.6 m (crouched 1.0 m). Draw green as spheres and pink as cubes, roughly
 body-sized, with a short gun barrel from chest height pointing along (yaw, pitch).
+
+## `motion` (60 FPS playback)
+
+Ken wants playback at 60 FPS. The simulation and the networks run at 10 steps per second,
+so the recorder also saves player movement at 60 frames per second (6 frames per step):
+
+| Key | Shape | Meaning |
+|-----|-------|---------|
+| `fps` | | 60. |
+| `frames` | | Number of 60 FPS frames, `F = (steps - 1) * 6 + 1`. |
+| `pos` | F x N x 3 | x, y, feet height. |
+| `yaw` | F x N | Facing angle (already interpolated the short way round). |
+| `pitch` | F x N | Gun pitch. |
+
+Frame `f` lines up with simulation step `f / 6`. Drive the 3D scene from `motion` at 60 FPS
+(times the playback speed), and look up everything else (`frames`, `shots`, `network`) at
+step `floor(f / 6)`. Respawns are not interpolated, so players jump instead of gliding.
 
 ## `network` (inspector panel)
 
