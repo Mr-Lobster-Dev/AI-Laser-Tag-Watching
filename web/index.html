@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Laser Tag Replays</title>
+  <meta name="description" content="Watch AI agents learn laser tag: 3D match replays with a live look inside each agent's network.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js", "three/addons/OrbitControls.js": "./vendor/OrbitControls.js" } }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="scene" aria-label="3D replay of the arena"></canvas>
+
+    <!-- Toolbar -->
+    <header class="toolbar glass" role="toolbar" aria-label="Replay controls">
+      <div class="toolbar-left">
+        <button class="icon-btn" id="btn-sidebar" title="Toggle sidebar (S)" aria-label="Toggle sidebar" aria-pressed="true">
+          <svg viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="13" rx="3"/><line x1="7.5" y1="3.5" x2="7.5" y2="16.5"/></svg>
+        </button>
+        <div class="title">
+          <span class="app-name">Laser Tag</span>
+          <button class="match-btn" id="btn-match" aria-haspopup="listbox" aria-expanded="false" title="Choose match (M)">
+            <span id="match-label">Loading…</span>
+            <svg viewBox="0 0 20 20" class="chev"><path d="M6 8l4 4 4-4"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="segmented" id="camera-modes" role="radiogroup" aria-label="Camera">
+        <button role="radio" data-cam="orbit" aria-checked="true" title="Orbit camera (O)">Orbit</button>
+        <button role="radio" data-cam="top" aria-checked="false" title="Top-down camera (T)">Top</button>
+        <button role="radio" data-cam="chase" aria-checked="false" title="Orbit around the selected agent (V)">Spectate</button>
+        <button role="radio" data-cam="follow" aria-checked="false" title="See through the selected agent's eyes (F)">Agent view</button>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
+      <div class="toolbar-right">
+        <button class="icon-btn" id="btn-theme" title="Appearance (A)" aria-label="Appearance">
+          <svg viewBox="0 0 20 20" id="theme-icon"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" class="fill"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+          <svg viewBox="0 0 20 20"><rect x="2.5" y="5.5" width="15" height="9.5" rx="2"/><path d="M5.5 8.5h1M8.5 8.5h1M11.5 8.5h1M14.5 8.5h0M6 12h8"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-inspector" title="Network inspector (I)" aria-label="Network inspector" aria-pressed="false">
+          <svg viewBox="0 0 20 20"><circle cx="5" cy="6" r="1.8"/><circle cx="5" cy="14" r="1.8"/><circle cx="15" cy="10" r="1.8"/><path d="M6.7 6.6l6.6 2.8M6.7 13.4l6.6-2.8"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Match picker -->
+    <div class="popover glass" id="match-popover" role="listbox" aria-label="Saved matches" hidden>
+      <div class="popover-head">
+        <span>Saved replays</span>
+        <span class="muted" id="match-count"></span>
+      </div>
+      <div class="match-list" id="match-list"></div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar glass" id="sidebar" aria-label="Scoreboard">
+      <section class="scoreboard">
+        <div class="team green">
+          <span class="team-icon sphere" aria-hidden="true"></span>
+          <span class="team-name">Green</span>
+          <span class="team-score" id="score-green">0</span>
+        </div>
+        <div class="score-sep">–</div>
+        <div class="team pink">
+          <span class="team-score" id="score-pink">0</span>
+          <span class="team-name">Pink</span>
+          <span class="team-icon cube" aria-hidden="true"></span>
+        </div>
+      </section>
+      <div class="match-meta muted" id="match-meta"></div>
+
+      <h2 class="section-title">Players <span class="muted kbd-hint">1–8</span></h2>
+      <ul class="agent-list" id="agent-list"></ul>
+
+      <h2 class="section-title">Most-used radio codes</h2>
+      <div class="radio-chart" id="radio-chart"></div>
+    </aside>
+
+    <!-- Inspector -->
+    <aside class="inspector glass" id="inspector" aria-label="Network inspector" hidden>
+      <div class="inspector-head">
+        <div>
+          <h2>Network inspector</h2>
+          <p class="muted small">Values the network had when it chose this step's actions.</p>
+        </div>
+        <button class="icon-btn small" id="btn-close-inspector" aria-label="Close inspector">
+          <svg viewBox="0 0 20 20"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg>
+        </button>
+      </div>
+      <div class="agent-picker" id="agent-picker" role="radiogroup" aria-label="Agent"></div>
+
+      <div class="inspector-body">
+        <section class="card">
+          <header><h3>Outlook</h3><span class="value-num" id="value-num">0.00</span></header>
+          <p class="muted small">The agent's own guess of the reward coming up. Higher means it thinks things are going well.</p>
+          <canvas id="cv-value" height="72"></canvas>
+        </section>
+
+        <section class="card">
+          <header><h3>What it sees</h3><span class="muted small">24 × 8 rays · 90° × 60°</span></header>
+          <canvas id="cv-vision" height="96"></canvas>
+          <div class="legend">
+            <span><i style="--c:var(--vis-wall)"></i>Wall / floor</span>
+            <span><i style="--c:var(--vis-mate)"></i>Teammate</span>
+            <span><i style="--c:var(--vis-opp)"></i>Opponent</span>
+            <span class="muted">Brighter = closer</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <header><h3>Encoders</h3><span class="muted small">64 + 64 units</span></header>
+          <div class="enc-row"><span class="small muted">Vision</span><canvas id="cv-enc-vision" height="16"></canvas></div>
+          <div class="enc-row"><span class="small muted">Body, hearing, radio</span><canvas id="cv-enc-other" height="16"></canvas></div>
+        </section>
+
+        <section class="card">
+          <header><h3>Memory</h3><span class="muted small">128 GRU cells</span></header>
+          <canvas id="cv-memory" height="64"></canvas>
+          <div class="legend"><span><i style="--c:var(--neg)"></i>−1</span><span><i style="--c:var(--fill-2)"></i>0</span><span><i style="--c:var(--pos)"></i>+1</span></div>
+        </section>
+
+        <section class="card">
+          <header><h3>Action choices</h3><span class="muted small">probability per option</span></header>
+          <div id="action-heads" class="heads"></div>
+        </section>
+
+        <section class="card">
+          <header><h3>Radio digits</h3><span class="muted small">0–9 per digit</span></header>
+          <div id="radio-heads" class="radio-heads"></div>
+        </section>
+
+        <section class="card">
+          <header><h3>Memory → actions</h3><span class="muted small">strongest 24 links</span></header>
+          <canvas id="cv-links" height="220"></canvas>
+          <p class="muted small">Line brightness is weight × memory activation. Warm lines push an action up, cool lines push it down.</p>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Playback bar -->
+    <footer class="playbar glass" aria-label="Playback">
+      <button class="icon-btn" id="btn-back" title="Step back (←)" aria-label="Step back">
+        <svg viewBox="0 0 20 20"><path d="M12.5 5.5L8 10l4.5 4.5"/></svg>
+      </button>
+      <button class="icon-btn play" id="btn-play" title="Play / pause (Space)" aria-label="Play">
+        <svg viewBox="0 0 20 20" id="play-icon"><path class="fill" d="M7 4.8v10.4l8.2-5.2z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-fwd" title="Step forward (→)" aria-label="Step forward">
+        <svg viewBox="0 0 20 20"><path d="M7.5 5.5L12 10l-4.5 4.5"/></svg>
+      </button>
+      <span class="time" id="time-now">0:00.0</span>
+      <div class="scrubber" id="scrubber">
+        <canvas id="cv-marks" aria-hidden="true"></canvas>
+        <input type="range" id="seek" min="0" max="1799" value="0" step="1" aria-label="Timeline">
+      </div>
+      <span class="time muted" id="time-total">3:00</span>
+      <div class="speed" id="speed">
+        <button id="btn-speed" title="Speed ([ and ])" aria-haspopup="menu">1×</button>
+        <div class="menu glass" id="speed-menu" role="menu" hidden></div>
+      </div>
+    </footer>
+
+    <div class="toast glass" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <span id="loading-text">Loading replay…</span>
+      <div class="progress"><div id="loading-bar"></div></div>
+    </div>
+
+    <!-- Shortcuts sheet -->
+    <div class="sheet-backdrop" id="help" hidden>
+      <div class="sheet glass" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <h2 id="help-title">Keyboard shortcuts</h2>
+        <dl class="shortcuts">
+          <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Step one frame (hold <kbd>⇧</kbd> for 1 s)</dd>
+          <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>Jump to start or end</dd>
+          <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Slower or faster</dd>
+          <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Select an agent</dd>
+          <dt><kbd>O</kbd> <kbd>T</kbd> <kbd>V</kbd> <kbd>F</kbd></dt><dd>Free orbit, top-down, spectate (orbit an agent), agent view</dd>
+          <dt><kbd>C</kbd></dt><dd>Cycle cameras</dd>
+          <dt><kbd>R</kbd></dt><dd>Reset view (agent view: re-centre look-around)</dd>
+          <dt>Drag · scroll</dt><dd>Rotate and zoom, eased. In agent view, drag looks around, scroll zooms</dd>
+          <dt><kbd>I</kbd></dt><dd>Network inspector</dd>
+          <dt><kbd>S</kbd></dt><dd>Sidebar</dd>
+          <dt><kbd>M</kbd></dt><dd>Match picker</dd>
+          <dt><kbd>,</kbd> <kbd>.</kbd></dt><dd>Previous or next match</dd>
+          <dt><kbd>A</kbd></dt><dd>Appearance: system, light, dark</dd>
+          <dt><kbd>?</kbd></dt><dd>This sheet</dd>
+        </dl>
+        <button class="btn" id="btn-help-close">Done</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

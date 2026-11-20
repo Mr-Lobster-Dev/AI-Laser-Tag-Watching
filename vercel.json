@@ -1,0 +1,16 @@
+{
+  "outputDirectory": "web",
+  "headers": [
+    {
+      "source": "/replays/(.*)\\.gz",
+      "headers": [
+        { "key": "Content-Type", "value": "application/octet-stream" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/replays/index.json",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    }
+  ]
+}
