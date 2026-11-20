@@ -1,0 +1,15 @@
+[
+ {
+  "match": 1,
+  "file": "match_000001.json.gz",
+  "green": 0.0,
+  "pink": 0.0,
+  "winner": "draw",
+  "trained_matches": 0,
+  "shots": 288,
+  "tags": 0,
+  "bytes": 3410854,
+  "_size": 3410854,
+  "_mtime": 1795148290
+ }
+]
