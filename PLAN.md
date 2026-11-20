@@ -37,9 +37,10 @@ Each agent sees only what a person in its position could:
 Per step, multi-discrete: move forward/back/none, strafe left/right/none, turn yaw (5 bins), tilt pitch (3 bins), crouch toggle, fire (ignored while cooling down), plus a communication output (below).
 
 ## 5. Team communication
-- Each agent emits a "radio" message every step: 4 discrete symbols from a 16-word vocabulary that the agents invent themselves.
+- Each agent sends a "radio" message every step as a fixed four-digit code: (d1, d2, d3, d4), each digit 0-9. That gives 10,000 possible messages, from (0,0,0,0) to (9,9,9,9).
+- The network picks the code with four output heads, one per digit, each choosing from 0-9. It can also keep sending the same code when it has nothing new to say.
 - Teammates receive all three teammates' last messages as input. Opponents never hear them.
-- Nothing about the meaning is hard-coded; the language emerges from training. Replays show each message so Ken can watch a vocabulary form.
+- Nothing about the meaning is hard-coded; the language emerges from training. Replays show each code so Ken can watch a vocabulary form, for example one code coming to mean "enemy on the tower".
 
 ## 6. Network and learning
 - **Network per agent (~120k params):** ray grid -> small conv/MLP encoder; hearing + body + radio -> MLP; concatenate -> GRU (128) for memory -> policy heads + value head.
@@ -55,23 +56,23 @@ Per step, multi-discrete: move forward/back/none, strafe left/right/none, turn y
 - Training stats (scores, hit rate, message entropy) logged to a CSV.
 
 ## 8. Recording every 100th match
-- Matches 1, 100, 200, ... are saved as compact replays: per step, each agent's position, yaw, pitch, crouch, fire event, hit events, radio symbols, and both scores.
+- Matches 1, 100, 200, ... are saved as compact replays: per step, each agent's position, yaw, pitch, crouch, fire event, hit events, radio codes, and both scores.
 - About 1,800 steps x 8 agents, gzipped JSON, roughly 200-400 KB each, saved to `/mnt/project-files/laser-tag/replays/`.
 
 ## 9. Replay website
 - Three.js 3D view of the arena: free-orbit camera, top-down view, and "follow agent" first-person view.
 - Laser beams drawn as flashes, tagged agents blink, live scoreboard, timeline scrubber, 0.5x to 8x speed.
-- Sidebar: match picker (every 100th match), per-agent radio messages, and a training progress chart.
+- Sidebar: match picker (every 100th match), per-agent radio codes, plus a chart of the most-used codes, and a training progress chart.
 - **Hosting: Vercel.** Once the site works, connect the GitHub repo to a Vercel project (static site, root `web/`). Each push to the main branch redeploys automatically. Nothing is deployed until the site is built and checked.
 - New replays (3-5 MB each) are committed to `web/replays/` as training goes on, which triggers a redeploy. If the repo gets too big (over ~1 GB), they move to Vercel Blob storage and the site loads them from there.
 
 ### 9a. Neural network inspector panel
 - A slide-out panel next to the 3D view. Pick any of the 8 agents and watch its network's values move in time with the replay. Scrubbing and speed changes stay in sync.
 - It shows the whole flow, left to right, as a live diagram:
-  - **Inputs:** the agent's 24 x 8 vision grid drawn as a small heatmap (what it "sees"), hearing sectors, cooldown, and incoming radio symbols.
+  - **Inputs:** the agent's 24 x 8 vision grid drawn as a small heatmap (what it "sees"), hearing sectors, cooldown, and incoming radio codes from teammates.
   - **Encoder layer:** 64 activations as a glowing node strip.
   - **Memory (GRU, 128 units):** a 16 x 8 grid of cells whose colour shows each value, so you can watch memory flip when an enemy appears.
-  - **Outputs:** probability bars for each action (move, turn, fire), the radio symbols it chose, and the value estimate ("how well I think this is going") as a small line chart.
+  - **Outputs:** probability bars for each action (move, turn, fire), the four-digit code it chose (with a probability bar for each digit), and the value estimate ("how well I think this is going") as a small line chart.
   - Connection lines between layers, brightness scaled by weight x activation, limited to the strongest links so it stays readable.
 - **Data:** the recorder also saves these activations for every 100th match, quantized to 8 bits. That makes each replay roughly 3-5 MB, which is fine.
 - **"Real time" here means synced to replay playback.** A static site can't stream values from training live. A live training view would need a running server, which is possible later if Ken wants it.
