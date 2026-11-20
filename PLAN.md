@@ -10,7 +10,7 @@ Status: plan only. Execution starts 2026-11-20 11:00 Asia/Bangkok.
 ## 1. Tech stack
 - Python + NumPy (+ Numba for raycasting) for the simulator. No game engine: Unity/Godot are too heavy for 4 CPUs.
 - PyTorch (CPU) for the networks and training.
-- Replay site: static HTML + Three.js, published as a private claude.ai Artifact, with replay files bundled.
+- Replay site: static HTML + Three.js in the repo's `web/` folder, deployed to Vercel from the GitHub repo once it's built.
 
 ## 2. Arena
 - Realistic size: about 30 m x 20 m, 3 m ceiling, built from axis-aligned boxes (walls, pillars, crates).
@@ -62,7 +62,8 @@ Per step, multi-discrete: move forward/back/none, strafe left/right/none, turn y
 - Three.js 3D view of the arena: free-orbit camera, top-down view, and "follow agent" first-person view.
 - Laser beams drawn as flashes, tagged agents blink, live scoreboard, timeline scrubber, 0.5x to 8x speed.
 - Sidebar: match picker (every 100th match), per-agent radio messages, and a training progress chart.
-- Published as a private Artifact; republished with new replays as training goes on.
+- **Hosting: Vercel.** Once the site works, connect the GitHub repo to a Vercel project (static site, root `web/`). Each push to the main branch redeploys automatically. Nothing is deployed until the site is built and checked.
+- New replays (3-5 MB each) are committed to `web/replays/` as training goes on, which triggers a redeploy. If the repo gets too big (over ~1 GB), they move to Vercel Blob storage and the site loads them from there.
 
 ### 9a. Neural network inspector panel
 - A slide-out panel next to the 3D view. Pick any of the 8 agents and watch its network's values move in time with the replay. Scrubbing and speed changes stay in sync.
