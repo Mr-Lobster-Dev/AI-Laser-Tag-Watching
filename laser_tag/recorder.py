@@ -16,7 +16,7 @@ from .arena import WIDTH, DEPTH, WALL_H
 from .game import TEAM_NAMES, TEAM_SHAPES, DT, MATCH_STEPS, SEE_OPPONENT
 from .model import HEADS, ENC, HID
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 PLAYBACK_FPS = 60   # motion is saved at 60 frames per second for smooth playback
 TEAM_COLORS = {"green": "#34c759", "pink": "#ff5fa2"}
 KIND_NAMES = ["floor", "wall", "cover", "platform", "stair"]
@@ -116,13 +116,15 @@ class MatchRecorder:
             "version": FORMAT_VERSION,
             "match": self.match,
             "trained_matches": self.trained,
+            "aim_rewards": bool(g.aim_rewards),
             "dt": DT,
             "steps": steps,
             "arena": {"width": WIDTH, "depth": DEPTH, "wall_height": WALL_H, "boxes": boxes},
             "agents": [{"id": i, "team": TEAM_NAMES[g.team[i]], "shape": TEAM_SHAPES[g.team[i]]}
                        for i in range(g.n_agents)],
             "final_scores": {"green": g.team_scores()[0], "pink": g.team_scores()[1],
-                             "per_agent": g.score.tolist(), "winner": g.winner()},
+                             "per_agent": g.score.tolist(), "winner": g.winner(),
+                             "aim_points_per_agent": g.aim_score.tolist()},
             "frames": {
                 "pos": np.array(self.pos).ravel().tolist(),
                 "yaw": np.array(self.yaw).ravel().tolist(),

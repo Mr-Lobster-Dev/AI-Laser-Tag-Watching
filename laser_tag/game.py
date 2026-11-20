@@ -12,7 +12,12 @@ Rules (from the project plan):
   of the arena. There are no bases or objectives: agents can hold any spot they like.
 - Team radio: every step each agent sends a four-digit code (each digit 0-9) that
   only its teammates receive, one step later.
-- Team score = sum of its members' rewards; the higher team score wins.
+- Team score = sum of its members' tag points; the higher team score wins.
+- Optional aim rewards (training from match 701 on): +1 when an opponent comes into
+  your sight, -1 when you come into an opponent's sight. "In sight" means inside the
+  90 x 60 degree view with a clear line of sight. Each viewer/opponent pair can
+  trigger again only after 3 s, so flicking your view back and forth doesn't farm
+  points. Aim rewards are training rewards only; the scoreboard stays tag points.
 """
 from __future__ import annotations
 
@@ -27,6 +32,8 @@ MATCH_STEPS = 1800            # 3 minutes
 COOLDOWN_STEPS = 50           # 5 seconds
 RESPAWN_STEPS = 30            # 3 seconds
 HIT_REWARD, TAGGED_REWARD = 5.0, -3.0
+SIGHT_REWARD, SEEN_PENALTY = 1.0, -1.0
+SIGHT_RETRIGGER_STEPS = 30    # 3 seconds per viewer/opponent pair
 WALK_SPEED, TURN_SPEED, PITCH_SPEED = 3.0, np.radians(90), np.radians(60)
 MAX_PITCH = np.radians(60)
 RADIUS = 0.3                  # same body size for both teams
@@ -75,7 +82,8 @@ def _sector(angle):
 class LaserTagGame:
     n_agents = 8
 
-    def __init__(self, seed: int | None = None):
+    def __init__(self, seed: int | None = None, aim_rewards: bool = False):
+        self.aim_rewards = aim_rewards
         self.arena = Arena()
         self.rng = np.random.default_rng(seed)
         self.team = np.array([GREEN] * 4 + [PINK] * 4)
@@ -102,6 +110,9 @@ class LaserTagGame:
         self.was_hit_from = np.full(n, -1)    # sector a hit came from last step, -1 = none
         self.scored = np.zeros(n, dtype=bool)
         self.step_count = 0
+        self.visible = np.zeros((n, n), dtype=bool)        # visible[i, j]: i can see j
+        self.sight_cooldown = np.zeros((n, n), dtype=int)
+        self.aim_score = np.zeros(n)
         for i in range(n):
             self._spawn(i)
         return self.observe_all()
@@ -217,8 +228,20 @@ class LaserTagGame:
         self.score += rewards
         self.step_count += 1
         done = self.step_count >= MATCH_STEPS
-        return self.observe_all(), rewards, done, {"shots": shots, "tagged": tagged,
-                                                   "team_scores": self.team_scores()}
+        prev_visible = self.visible.copy()
+        obs = self.observe_all()
+        sightings = []
+        if self.aim_rewards:
+            enemy = self.team[:, None] != self.team[None, :]
+            entered = self.visible & ~prev_visible & enemy & (self.sight_cooldown == 0)
+            aim = entered.sum(1) * SIGHT_REWARD + entered.sum(0) * SEEN_PENALTY
+            rewards = rewards + aim
+            self.aim_score += aim
+            self.sight_cooldown[entered] = SIGHT_RETRIGGER_STEPS
+            sightings = [{"viewer": int(i), "seen": int(j)} for i, j in zip(*np.nonzero(entered))]
+        self.sight_cooldown = np.maximum(self.sight_cooldown - 1, 0)
+        return obs, rewards, done, {"shots": shots, "tagged": tagged, "sightings": sightings,
+                                    "team_scores": self.team_scores()}
 
     def team_scores(self):
         return [float(self.score[self.team == t].sum()) for t in (GREEN, PINK)]
@@ -264,7 +287,8 @@ class LaserTagGame:
         # Rays are ~4 degrees apart, so a distant player can slip between them even
         # though a person would clearly see them. For every other player inside the
         # view cone with a clear line of sight to their chest, mark the nearest cell.
-        ii, jj = np.nonzero(~np.eye(n, dtype=bool) & (self.down[None, :] == 0))
+        self.visible = np.zeros((n, n), dtype=bool)
+        ii, jj = np.nonzero(~np.eye(n, dtype=bool) & (self.down[None, :] == 0) & (self.down[:, None] == 0))
         chest = self.pos[jj] + np.array([0, 0, 1.0]) * np.where(self.crouch[jj], 0.7, 1.1)[:, None]
         vec = chest - eyes[ii]
         rng_ = np.linalg.norm(vec, axis=1)
@@ -275,6 +299,7 @@ class LaserTagGame:
             ii, jj, vec, rng_, bearing, elev = (x[inview] for x in (ii, jj, vec, rng_, bearing, elev))
             t, hit = self.trace(eyes[ii], vec / rng_[:, None], ii)
             vis = hit == jj
+            self.visible[ii[vis], jj[vis]] = True
             for i, j, r, b, e in zip(ii[vis], jj[vis], rng_[vis], bearing[vis], elev[vis]):
                 col = int(np.argmin(np.abs(self._ray_yaw - b)))
                 row = int(np.argmin(np.abs(self._ray_pitch - e)))

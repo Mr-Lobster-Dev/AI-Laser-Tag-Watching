@@ -46,6 +46,7 @@ Per step, multi-discrete: move forward/back/none, strafe left/right/none, turn y
 - **Network per agent (~120k params):** ray grid -> small conv/MLP encoder; hearing + body + radio -> MLP; concatenate -> GRU (128) for memory -> policy heads + value head.
 - **Eight separate networks**, one per agent, same architecture, own weights, so each can develop its own style.
 - **Algorithm:** PPO with a recurrent policy (independent PPO per agent). Optional upgrade: centralized critic (MAPPO) that sees the full state during training only; agents still act from their own perception.
+- **Aim rewards (Ken, from match 701):** +1 when an opponent comes into an agent's sight, -1 when the agent comes into an opponent's sight, with a 3 s re-trigger delay per pair. Training reward only; the scoreboard stays tag points.
 - **Rewards exactly as specified:** +5 for tagging an opponent, -3 for being tagged. Team score = sum of members. Winning team = higher score. Small optional shaping (e.g. tiny penalty for walking into walls) only if learning stalls, and it would be flagged.
 - **Respawn rule (assumption, needs Ken's ok):** a tagged agent is "down" for 3 s then respawns at a random spot on its own end of the arena. Otherwise a match would end early.
 

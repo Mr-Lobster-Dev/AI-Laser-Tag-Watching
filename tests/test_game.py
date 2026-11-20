@@ -144,3 +144,31 @@ def test_hearing_and_hit_direction():
     obs, _, _, _ = g.step(fire(0))
     assert obs["events"][4, 0] == 1 and obs["events"][0, 1] == 1
     assert obs["events"][4, 2 + 0] == 1           # shot came from straight ahead
+
+
+def test_aim_rewards_plus1_seeing_minus1_seen_with_retrigger_delay():
+    g = LaserTagGame(seed=0, aim_rewards=True)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, np.pi)        # green looks away from pink
+    place(g, 4, 20.0, 1.0, 0.0)         # pink looks away from green
+    g.step([IDLE] * 8)
+    g.yaw[0] = 0.0                      # green turns to face pink
+    _, r, _, info = g.step([IDLE] * 8)
+    assert info["sightings"] == [{"viewer": 0, "seen": 4}]
+    assert r[0] == 1 and r[4] == -1
+    assert g.team_scores() == [0.0, 0.0]          # scoreboard is tag points only
+    g.yaw[0] = np.pi; g.step([IDLE] * 8)
+    g.yaw[0] = 0.0
+    _, r, _, _ = g.step([IDLE] * 8)
+    assert r[0] == 0                    # looking away and back within 3 s doesn't count again
+
+
+def test_no_aim_rewards_by_default():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, np.pi)
+    place(g, 4, 20.0, 1.0, 0.0)
+    g.step([IDLE] * 8)
+    g.yaw[0] = 0.0
+    _, r, _, _ = g.step([IDLE] * 8)
+    assert r.sum() == 0
