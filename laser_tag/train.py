@@ -121,6 +121,13 @@ class Trainer:
             print(f"  first match with a tag: {numbers[first_hit]}")
 
         scores = np.array([g.team_scores() for g in games])
+        results = os.path.join(self.out, "match_results.csv")
+        new = not os.path.exists(results)
+        with open(results, "a") as f:
+            if new:
+                f.write("match,green,pink,tags\n")
+            for e in range(E):
+                f.write(f"{numbers[e]},{scores[e, 0]:g},{scores[e, 1]:g},{env_tags[e]}\n")
         self.matches_done += E
         stats = {"matches": self.matches_done, "green_mean": scores[:, 0].mean(),
                  "pink_mean": scores[:, 1].mean(), "tags_per_match": tags / E,
