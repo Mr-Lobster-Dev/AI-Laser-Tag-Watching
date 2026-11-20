@@ -15,7 +15,7 @@ Status: plan only. Execution starts 2026-11-20 11:00 Asia/Bangkok.
 ## 2. Arena
 - Realistic size: about 30 m x 20 m, 3 m ceiling, built from axis-aligned boxes (walls, pillars, crates).
 - Vantage points: two raised platforms (1.5 m) reachable by ramps, a central tower, low cover (1 m) you can shoot over while crouched or standing, and a few long sightlines.
-- Mirror-symmetric so neither team has a layout advantage. Teams spawn at opposite bases.
+- Point-symmetric so neither team has a layout advantage. No bases or objectives: each team respawns at a random spot along its own end of the arena, so agents are free to find and hold a favourite spot.
 - Physics: 10 decisions per second, walk speed 3 m/s, crouch, no jumping in v1. 3 minutes = 1,800 steps.
 - Lasers: instant ray, unlimited range, stopped by geometry, no bounce. 5 s cooldown (50 steps). A hit on a teammate does nothing; hitting yourself is impossible.
 
@@ -46,7 +46,7 @@ Per step, multi-discrete: move forward/back/none, strafe left/right/none, turn y
 - **Eight separate networks**, one per agent, same architecture, own weights, so each can develop its own style.
 - **Algorithm:** PPO with a recurrent policy (independent PPO per agent). Optional upgrade: centralized critic (MAPPO) that sees the full state during training only; agents still act from their own perception.
 - **Rewards exactly as specified:** +5 for tagging an opponent, -3 for being tagged. Team score = sum of members. Winning team = higher score. Small optional shaping (e.g. tiny penalty for walking into walls) only if learning stalls, and it would be flagged.
-- **Respawn rule (assumption, needs Ken's ok):** a tagged agent is "down" for 3 s then respawns at its base, like most laser tag modes. Otherwise a match would end early.
+- **Respawn rule (assumption, needs Ken's ok):** a tagged agent is "down" for 3 s then respawns at a random spot on its own end of the arena. Otherwise a match would end early.
 
 ## 7. Match runner
 - Runs N matches in parallel worker processes (3 workers on 4 cores), collects trajectories, runs a PPO update every few matches.

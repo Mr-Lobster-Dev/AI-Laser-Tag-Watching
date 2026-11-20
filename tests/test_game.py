@@ -1,0 +1,113 @@
+import numpy as np
+
+from laser_tag.game import (LaserTagGame, Action, COOLDOWN_STEPS, RESPAWN_STEPS, MATCH_STEPS,
+                            SEE_OPPONENT, SEE_TEAMMATE)
+
+IDLE = Action()
+
+
+def place(g, i, x, y, yaw, feet=0.0):
+    g.pos[i] = (x, y, feet)
+    g.yaw[i] = yaw
+    g.pitch[i] = 0.0
+
+
+def clear_field(g, keep):
+    """Park everyone except `keep` in a far corner, out of the way."""
+    for k in range(8):
+        if k not in keep:
+            place(g, k, 0.5 + 0.7 * (k % 4), 19.5 if k < 4 else 0.5, 0.0)
+
+
+def fire(i):
+    acts = [IDLE] * 8
+    acts = list(acts)
+    acts[i] = Action(fire=True)
+    return acts
+
+
+def test_hit_opponent_scores_plus5_minus3():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, 0.0)          # open lane along y=1
+    place(g, 4, 25.0, 1.0, np.pi)
+    _, r, _, info = g.step(fire(0))
+    assert info["shots"][0]["target"] == 4
+    assert r[0] == 5 and r[4] == -3
+    assert g.team_scores() == [5.0, -3.0]
+    assert g.down[4] == RESPAWN_STEPS
+
+
+def test_friendly_fire_does_nothing():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 1})
+    place(g, 0, 2.0, 1.0, 0.0)
+    place(g, 1, 6.0, 1.0, 0.0)
+    _, r, _, _ = g.step(fire(0))
+    assert r.sum() == 0 and g.down[1] == 0
+
+
+def test_walls_block_lasers_and_no_bounce():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 4})
+    place(g, 0, 8.0, 6.5, 0.0)          # wall at x=10..10.3 spans y 4..9
+    place(g, 4, 12.0, 6.5, np.pi)
+    _, r, _, info = g.step(fire(0))
+    assert info["shots"][0]["target"] == -1 and r.sum() == 0
+
+
+def test_cooldown_five_seconds():
+    g = LaserTagGame(seed=0)
+    g.step(fire(0))
+    for _ in range(COOLDOWN_STEPS - 1):
+        _, _, _, info = g.step(fire(0))
+        assert not info["shots"]
+    _, _, _, info = g.step(fire(0))
+    assert len(info["shots"]) == 1
+
+
+def test_respawn_after_three_seconds_on_own_end():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, 0.0)
+    place(g, 4, 25.0, 1.0, np.pi)
+    g.step(fire(0))
+    for _ in range(RESPAWN_STEPS):
+        g.step([IDLE] * 8)
+    assert g.down[4] == 0 and g.pos[4, 0] > 26.5
+
+
+def test_cannot_walk_through_walls_but_can_climb_stairs():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0})
+    place(g, 0, 9.5, 6.5, 0.0)
+    for _ in range(20):
+        g.step([Action(forward=1)] + [IDLE] * 7)
+    assert g.pos[0, 0] < 10.0
+    # Stairs run +x from x=8..10 at y 14..16 down from the 1.5 m platform at x 5..8.
+    place(g, 0, 10.6, 15.0, np.pi)
+    for _ in range(15):
+        g.step([Action(forward=1)] + [IDLE] * 7)
+    assert g.pos[0, 2] == 1.5
+
+
+def test_vision_sees_opponent_not_through_walls():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 1, 4})
+    place(g, 0, 2.0, 1.0, 0.0)
+    place(g, 4, 20.0, 1.0, np.pi)
+    codes = g.observe(0)["vision"][..., 1]
+    assert (codes == SEE_OPPONENT).any()
+    place(g, 0, 8.0, 6.5, 0.0)
+    place(g, 4, 12.0, 6.5, np.pi)
+    codes = g.observe(0)["vision"][..., 1]
+    assert not (codes == SEE_OPPONENT).any()
+
+
+def test_match_lasts_three_minutes():
+    g = LaserTagGame(seed=0)
+    g.observe_all = lambda: None  # skip vision for speed
+    done = False
+    for k in range(MATCH_STEPS):
+        _, _, done, _ = g.step([IDLE] * 8)
+        assert done == (k == MATCH_STEPS - 1)
