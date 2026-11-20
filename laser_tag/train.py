@@ -33,10 +33,11 @@ def should_record(match_no, every=100):
 
 
 class Trainer:
-    def __init__(self, out, envs=4, aim_from=None, lr=3e-4, gamma=0.995, lam=0.95, clip=0.2, epochs=3,
+    def __init__(self, out, envs=4, aim_from=None, hints_from=None, lr=3e-4, gamma=0.995, lam=0.95, clip=0.2, epochs=3,
                  chunk=40, minibatches=4, ent_coef=0.01, vf_coef=0.5, reward_scale=0.2, seed=0):
         self.out = out
         self.aim_from = aim_from   # matches with number >= aim_from use aim rewards
+        self.hints_from = hints_from   # matches with number >= hints_from use duel hints
         self.E = envs
         self.gamma, self.lam, self.clip = gamma, lam, clip
         self.epochs, self.chunk, self.minibatches = epochs, chunk, minibatches
@@ -63,7 +64,9 @@ class Trainer:
         E, G, T = self.E, N_AGENTS, MATCH_STEPS
         first = self.matches_done + 1
         aim = self.aim_from is not None and first >= self.aim_from
-        games = [LaserTagGame(seed=self.seed * 1_000_003 + first + e, aim_rewards=aim) for e in range(E)]
+        hints = self.hints_from is not None and first >= self.hints_from
+        games = [LaserTagGame(seed=self.seed * 1_000_003 + first + e, aim_rewards=aim, duel_hints=hints)
+                 for e in range(E)]
         numbers = [first + e for e in range(E)]
         first_hit_marker = os.path.join(self.out, "replays", "first_hit.json")
         hunting = not os.path.exists(first_hit_marker)   # still looking for the first tag
@@ -224,11 +227,13 @@ def main():
     ap.add_argument("--envs", type=int, default=4)
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--hints-from", type=int, default=None,
+                    help="first match number that uses duel hints (+7 duel / +10 face-off)")
     ap.add_argument("--aim-from", type=int, default=None,
                     help="first match number that uses aim rewards (+1 sight / -1 seen)")
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
-    Trainer(args.out, envs=args.envs, seed=args.seed, aim_from=args.aim_from).run(args.matches)
+    Trainer(args.out, envs=args.envs, seed=args.seed, aim_from=args.aim_from, hints_from=args.hints_from).run(args.matches)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ Per step, multi-discrete: move forward/back/none, strafe left/right/none, turn y
 - **Eight separate networks**, one per agent, same architecture, own weights, so each can develop its own style.
 - **Algorithm:** PPO with a recurrent policy (independent PPO per agent). Optional upgrade: centralized critic (MAPPO) that sees the full state during training only; agents still act from their own perception.
 - **Aim rewards (Ken, from match 701):** +1 when an opponent comes into an agent's sight, -1 when the agent comes into an opponent's sight, with a 3 s re-trigger delay per pair. Training reward only; the scoreboard stays tag points.
+- **Duel hints (Ken, from match 2309):** extra training reward for the shooter on a tag: +7 if the target could also see the shooter and the shooter fired first, +10 instead if the target's crosshair was also on the shooter. Considered and left out because they can be farmed by staring or hiding: per-second crosshair points (+2/-2), a per-second sight penalty (-1), and +0.5 for being hidden. Scoreboard unchanged.
 - **Rewards exactly as specified:** +5 for tagging an opponent, -3 for being tagged. Team score = sum of members. Winning team = higher score. Small optional shaping (e.g. tiny penalty for walking into walls) only if learning stalls, and it would be flagged.
 - **Respawn rule (assumption, needs Ken's ok):** a tagged agent is "down" for 3 s then respawns at a random spot on its own end of the arena. Otherwise a match would end early.
 

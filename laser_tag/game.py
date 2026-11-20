@@ -18,6 +18,13 @@ Rules (from the project plan):
   90 x 60 degree view with a clear line of sight. Each viewer/opponent pair can
   trigger again only after 3 s, so flicking your view back and forth doesn't farm
   points. Aim rewards are training rewards only; the scoreboard stays tag points.
+- Optional duel hints (training from the "Hints added" match on), extra training
+  reward for the shooter on top of the +5 tag:
+    +7  if the target could also see the shooter and the shooter fired first
+        (the target had not fired in the last 5 s, nor in the same tick);
+    +10 instead, if additionally the target's crosshair was on the shooter
+        (aim within 5 degrees), i.e. a straight face-off won by the shooter.
+  Like aim rewards, these never change the scoreboard.
 """
 from __future__ import annotations
 
@@ -34,6 +41,8 @@ RESPAWN_STEPS = 30            # 3 seconds
 HIT_REWARD, TAGGED_REWARD = 5.0, -3.0
 SIGHT_REWARD, SEEN_PENALTY = 1.0, -1.0
 SIGHT_RETRIGGER_STEPS = 30    # 3 seconds per viewer/opponent pair
+DUEL_BONUS, FACEOFF_BONUS = 7.0, 10.0
+FACEOFF_COS = np.cos(np.radians(5))
 WALK_SPEED, TURN_SPEED, PITCH_SPEED = 3.0, np.radians(90), np.radians(60)
 MAX_PITCH = np.radians(60)
 RADIUS = 0.3                  # same body size for both teams
@@ -82,8 +91,9 @@ def _sector(angle):
 class LaserTagGame:
     n_agents = 8
 
-    def __init__(self, seed: int | None = None, aim_rewards: bool = False):
+    def __init__(self, seed: int | None = None, aim_rewards: bool = False, duel_hints: bool = False):
         self.aim_rewards = aim_rewards
+        self.duel_hints = duel_hints
         self.arena = Arena()
         self.rng = np.random.default_rng(seed)
         self.team = np.array([GREEN] * 4 + [PINK] * 4)
@@ -113,6 +123,7 @@ class LaserTagGame:
         self.visible = np.zeros((n, n), dtype=bool)        # visible[i, j]: i can see j
         self.sight_cooldown = np.zeros((n, n), dtype=int)
         self.aim_score = np.zeros(n)
+        self.hint_score = np.zeros(n)
         for i in range(n):
             self._spawn(i)
         return self.observe_all()
@@ -163,6 +174,7 @@ class LaserTagGame:
         """Advance one tick (0.1 s). Returns (observations, rewards, done, info)."""
         n = self.n_agents
         rewards = np.zeros(n)
+        hint_rewards = np.zeros(n)
         active = self.down == 0
         self.moving[:] = False
 
@@ -195,7 +207,8 @@ class LaserTagGame:
         # Firing: all shots this tick resolve together, against positions after movement.
         shooters = np.array([i for i in range(n) if active[i] and actions[i].fire and self.cooldown[i] == 0],
                             dtype=int)
-        shots, tagged = [], {}
+        shots, tagged, duels = [], {}, []
+        ready_before = self.cooldown == 0
         self.was_hit_from[:] = -1
         self.scored[:] = False
         if len(shooters):
@@ -210,6 +223,14 @@ class LaserTagGame:
                     tagged[j] = i
                     rewards[i] += HIT_REWARD
                     rewards[j] += TAGGED_REWARD
+                    if self.duel_hints and self.visible[j, i] and ready_before[j] and j not in shooters:
+                        to_shooter = self.eye(i) - self.eye(j)
+                        to_shooter /= np.linalg.norm(to_shooter) + 1e-9
+                        faceoff = float(self.aim(j) @ to_shooter) >= FACEOFF_COS
+                        bonus = FACEOFF_BONUS if faceoff else DUEL_BONUS
+                        hint_rewards[i] += bonus
+                        duels.append({"shooter": i, "target": j, "kind": "faceoff" if faceoff else "duel",
+                                      "bonus": bonus})
                     self.scored[i] = True
                     dx, dy = self.pos[i, :2] - self.pos[j, :2]
                     self.was_hit_from[j] = _sector(np.arctan2(dy, dx) - self.yaw[j])
@@ -229,6 +250,8 @@ class LaserTagGame:
         self.step_count += 1
         done = self.step_count >= MATCH_STEPS
         prev_visible = self.visible.copy()
+        self.hint_score += hint_rewards
+        rewards = rewards + hint_rewards
         obs = self.observe_all()
         sightings = []
         if self.aim_rewards:
@@ -240,7 +263,7 @@ class LaserTagGame:
             self.sight_cooldown[entered] = SIGHT_RETRIGGER_STEPS
             sightings = [{"viewer": int(i), "seen": int(j)} for i, j in zip(*np.nonzero(entered))]
         self.sight_cooldown = np.maximum(self.sight_cooldown - 1, 0)
-        return obs, rewards, done, {"shots": shots, "tagged": tagged, "sightings": sightings,
+        return obs, rewards, done, {"shots": shots, "tagged": tagged, "sightings": sightings, "duels": duels,
                                     "team_scores": self.team_scores()}
 
     def team_scores(self):

@@ -19,15 +19,16 @@ The simulator and training code are done; the website only needs to read replay 
 
 | Key | Meaning |
 |-----|---------|
-| `version` | Format version (4: adds `aim_rewards`; 3 added `tags`; 2 added 60 FPS `motion`). |
+| `version` | Format version (5: adds `duel_hints`; 4 added `aim_rewards`; 3 added `tags`; 2 added 60 FPS `motion`). |
 | `match` | Match number. |
 | `aim_rewards` | `true` for matches trained with Ken's aim rewards (match 701 onward): +1 when an opponent comes into an agent's sight, -1 when it comes into an opponent's sight. In the match picker, draw a divider labelled **"Aim rewards added"** between the last match without them and the first with them. Older files have no key (treat as `false`). |
+| `duel_hints` | `true` for matches trained with the duel hints (match 2309 onward): extra training reward for the shooter on a tag, +7 if the target could see the shooter and hadn't fired first, +10 instead if the target's crosshair was also on the shooter. In the match picker, draw a divider labelled **"Hints added"** before the first match with them. Older files have no key (treat as `false`). |
 | `trained_matches` | Matches the networks had trained on before this one. |
 | `dt` | Seconds per step (0.1). |
 | `steps` | Number of steps, `S` (1800 = 3 minutes). |
 | `arena` | `width` 30, `depth` 20, `wall_height` 3, `boxes`: `[x0, y0, z0, x1, y1, z1, kind]` with kind in `wall`, `cover`, `platform`, `stair`. Units are metres; z is up. |
 | `agents` | 8 entries: `{id, team: "green" or "pink", shape: "sphere" or "cube"}`. Ids 0-3 green, 4-7 pink. |
-| `final_scores` | `{green, pink, per_agent: [8], winner: "green" / "pink" / "draw", aim_points_per_agent: [8]}`. Scores are tag points only; aim points are training rewards shown separately. |
+| `final_scores` | `{green, pink, per_agent: [8], winner: "green" / "pink" / "draw", aim_points_per_agent: [8], hint_points_per_agent: [8]}`. Scores are tag points only; aim points are training rewards shown separately. |
 | `frames` | Per-step state at 10 Hz (the simulation rate), flat arrays, index `[step * 8 + agent]` (see below). |
 | `motion` | Player movement at **60 FPS** for smooth playback (see below). |
 | `shots` | List of `{step, shooter, target, tag, end}`. `target` is an agent id or -1 (hit a wall or nothing); `tag` is true when it scored; `end` is the beam end point `[x, y, z]`. The beam starts at the shooter's eye. |

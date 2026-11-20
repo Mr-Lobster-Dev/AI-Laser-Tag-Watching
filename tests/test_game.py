@@ -172,3 +172,42 @@ def test_no_aim_rewards_by_default():
     g.yaw[0] = 0.0
     _, r, _, _ = g.step([IDLE] * 8)
     assert r.sum() == 0
+
+
+def _duel_setup(hints=True, target_yaw=np.pi):
+    g = LaserTagGame(seed=0, duel_hints=hints)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, 0.0)
+    place(g, 4, 20.0, 1.0, target_yaw)
+    g.step([IDLE] * 8)                  # let both register what they can see
+    return g
+
+
+def test_faceoff_hint_plus10_without_changing_score():
+    g = _duel_setup(target_yaw=np.pi)   # pink aims straight at green
+    _, r, _, info = g.step(fire(0))
+    assert info["duels"][0]["kind"] == "faceoff"
+    assert r[0] == 5 + 10 and r[4] == -3
+    assert g.team_scores() == [5.0, -3.0]
+
+
+def test_duel_hint_plus7_when_seen_but_not_aimed():
+    g = _duel_setup(target_yaw=np.pi + np.radians(30))   # sees green, aims off to the side
+    _, r, _, info = g.step(fire(0))
+    assert info["duels"][0]["kind"] == "duel" and r[0] == 5 + 7
+
+
+def test_no_duel_hint_when_target_cannot_see_shooter_or_hints_off():
+    g = _duel_setup(target_yaw=0.0)     # pink faces away
+    _, r, _, _ = g.step(fire(0))
+    assert r[0] == 5
+    g = _duel_setup(hints=False)
+    _, r, _, _ = g.step(fire(0))
+    assert r[0] == 5
+
+
+def test_no_duel_hint_if_target_fired_first():
+    g = _duel_setup(target_yaw=np.pi + np.radians(30))
+    g.cooldown[4] = 20                  # pink fired (and missed) 3 s ago
+    _, r, _, _ = g.step(fire(0))
+    assert r[0] == 5
