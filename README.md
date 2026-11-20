@@ -21,7 +21,7 @@ Agents perceive only a first-person 90° x 60° view (24 x 8 rays that walls blo
 
 ## Try it
 ```
-pip install numpy pytest
+pip install -r requirements.txt
 python -m laser_tag.demo --map   # print the arena and play one match with random agents
 python -m pytest tests           # rule tests
 ```

@@ -96,11 +96,11 @@ def test_vision_sees_opponent_not_through_walls():
     clear_field(g, {0, 1, 4})
     place(g, 0, 2.0, 1.0, 0.0)
     place(g, 4, 20.0, 1.0, np.pi)
-    codes = g.observe(0)["vision"][..., 1]
+    codes = np.rint(g.observe(0)["vision"][..., 1] * 3)
     assert (codes == SEE_OPPONENT).any()
     place(g, 0, 8.0, 6.5, 0.0)
     place(g, 4, 12.0, 6.5, np.pi)
-    codes = g.observe(0)["vision"][..., 1]
+    codes = np.rint(g.observe(0)["vision"][..., 1] * 3)
     assert not (codes == SEE_OPPONENT).any()
 
 
@@ -111,3 +111,36 @@ def test_match_lasts_three_minutes():
     for k in range(MATCH_STEPS):
         _, _, done, _ = g.step([IDLE] * 8)
         assert done == (k == MATCH_STEPS - 1)
+
+
+def test_radio_reaches_teammates_only():
+    g = LaserTagGame(seed=0)
+    acts = [IDLE] * 8
+    acts = list(acts)
+    acts[0] = Action(radio=(1, 2, 3, 9))
+    obs, _, _, _ = g.step(acts)
+    r = obs["radio"].reshape(8, 3, 4, 10)
+    # Agent 1's first teammate slot is agent 0.
+    assert r[1, 0].argmax(axis=1).tolist() == [1, 2, 3, 9]
+    # Pink agents never receive green codes: their radio inputs show only pink codes (all 0).
+    assert (r[4:, :, :, 0] == 1).all()
+
+
+def test_sees_aimed_gun():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, 0.0)
+    place(g, 4, 20.0, 1.0, np.pi)      # pink aims straight back at green
+    v = g.observe(0)["vision"]
+    opp = np.rint(v[..., 1] * 3) == SEE_OPPONENT
+    assert v[..., 2][opp].max() > 0.95 and v[..., 3][opp].min() == 1.0
+
+
+def test_hearing_and_hit_direction():
+    g = LaserTagGame(seed=0)
+    clear_field(g, {0, 4})
+    place(g, 0, 2.0, 1.0, 0.0)
+    place(g, 4, 12.0, 1.0, np.pi)
+    obs, _, _, _ = g.step(fire(0))
+    assert obs["events"][4, 0] == 1 and obs["events"][0, 1] == 1
+    assert obs["events"][4, 2 + 0] == 1           # shot came from straight ahead

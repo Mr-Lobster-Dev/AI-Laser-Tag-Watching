@@ -7,6 +7,7 @@ so neither team has a map advantage.
 from __future__ import annotations
 
 import numpy as np
+from numba import njit
 
 WIDTH, DEPTH, WALL_H = 30.0, 20.0, 3.0
 STEP_H = 0.3  # tallest ledge an agent can walk up
@@ -97,6 +98,55 @@ def ray_boxes(origins, dirs, lo, hi):
     return best, idx
 
 
+@njit(cache=True, fastmath=True)
+def _slab(ox, oy, oz, ix, iy, iz, lx, ly, lz, hx, hy, hz, best):
+    t1 = (lx - ox) * ix; t2 = (hx - ox) * ix
+    tn = min(t1, t2); tf = max(t1, t2)
+    t1 = (ly - oy) * iy; t2 = (hy - oy) * iy
+    tn = max(tn, min(t1, t2)); tf = min(tf, max(t1, t2))
+    t1 = (lz - oz) * iz; t2 = (hz - oz) * iz
+    tn = max(tn, min(t1, t2)); tf = min(tf, max(t1, t2))
+    if tn < 0.0:
+        tn = 0.0
+    if tf >= tn and tn < best:
+        return tn
+    return best
+
+
+@njit(cache=True, fastmath=True)
+def trace_rays(origins, dirs, owners, lo, hi, alo, ahi):
+    """Nearest hit per ray against world boxes (lo, hi) and agent boxes (alo, ahi).
+
+    The ray's owner (agent index, or -1) is skipped. Returns (t, agent) where agent
+    is -1 if the world was hit first (or nothing: t = inf)."""
+    R = origins.shape[0]
+    out_t = np.empty(R)
+    out_a = np.empty(R, dtype=np.int64)
+    for r in range(R):
+        ox, oy, oz = origins[r, 0], origins[r, 1], origins[r, 2]
+        dx, dy, dz = dirs[r, 0], dirs[r, 1], dirs[r, 2]
+        ix = 1.0 / dx if dx != 0.0 else 1e30
+        iy = 1.0 / dy if dy != 0.0 else 1e30
+        iz = 1.0 / dz if dz != 0.0 else 1e30
+        best = np.inf
+        for b in range(lo.shape[0]):
+            best = _slab(ox, oy, oz, ix, iy, iz, lo[b, 0], lo[b, 1], lo[b, 2], hi[b, 0], hi[b, 1], hi[b, 2], best)
+        agent = -1
+        for a in range(alo.shape[0]):
+            if a == owners[r]:
+                continue
+            t = _slab(ox, oy, oz, ix, iy, iz, alo[a, 0], alo[a, 1], alo[a, 2], ahi[a, 0], ahi[a, 1], ahi[a, 2], best)
+            if t < best:
+                best = t
+                agent = a
+        out_t[r] = best
+        out_a[r] = agent
+    return out_t, out_a
+
+
+_NO_AGENTS = np.zeros((0, 3))
+
+
 class Arena:
     def __init__(self):
         self.boxes = build_layout()
@@ -117,7 +167,9 @@ class Arena:
                 return x, y, (0.0 if team == 0 else np.pi)
 
     def raycast(self, origins, dirs):
-        return ray_boxes(np.atleast_2d(origins), np.atleast_2d(dirs), self.lo, self.hi)
+        o, d = np.atleast_2d(origins).astype(np.float64), np.atleast_2d(dirs).astype(np.float64)
+        t, _ = trace_rays(o, d, np.full(len(o), -1), self.lo, self.hi, _NO_AGENTS, _NO_AGENTS)
+        return t, None
 
     def try_move(self, x, y, feet, nx, ny, radius, height):
         """Move a cylinder-ish body from (x, y) to (nx, ny). Returns (x, y, feet) after

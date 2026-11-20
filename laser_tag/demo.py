@@ -46,7 +46,8 @@ def main():
     for _ in range(MATCH_STEPS):
         acts = [Action(forward=int(rng.integers(-1, 2)), strafe=int(rng.integers(-1, 2)),
                        turn=float(rng.uniform(-1, 1)), pitch=float(rng.uniform(-0.2, 0.2)),
-                       crouch=bool(rng.random() < 0.1), fire=bool(rng.random() < 0.2))
+                       crouch=bool(rng.random() < 0.1), fire=bool(rng.random() < 0.2),
+                       radio=tuple(rng.integers(0, 10, 4)))
                 for _ in range(game.n_agents)]
         _, _, done, info = game.step(acts)
         shots += len(info["shots"])
