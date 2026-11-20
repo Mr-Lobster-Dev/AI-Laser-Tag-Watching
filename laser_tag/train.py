@@ -4,7 +4,8 @@ Each agent has its own network and learns from its own reward (+5 tag, -3 tagged
 Several matches run side by side; after each batch the networks are updated with
 PPO (recurrent, truncated backprop through time in chunks).
 
-Match 1 and every 100th match are recorded as replays.
+Match 1, every 100th match, and the first match in which anyone gets tagged
+are recorded as replays.
 
 Usage:
     python -m laser_tag.train --out /mnt/project-files/laser-tag   # resumes automatically
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import time
 
@@ -61,8 +63,11 @@ class Trainer:
         first = self.matches_done + 1
         games = [LaserTagGame(seed=self.seed * 1_000_003 + first + e) for e in range(E)]
         numbers = [first + e for e in range(E)]
+        first_hit_marker = os.path.join(self.out, "replays", "first_hit.json")
+        hunting = not os.path.exists(first_hit_marker)   # still looking for the first tag
         recorders = {e: MatchRecorder(games[e], numbers[e], self.matches_done)
-                     for e in range(E) if should_record(numbers[e])}
+                     for e in range(E) if hunting or should_record(numbers[e])}
+        env_tags = [0] * E
         obs = [g.reset() for g in games]
         h = self.net.initial_state(E)
 
@@ -88,6 +93,7 @@ class Trainer:
                 buf_r[t, :, e] = torch.from_numpy(rew).float()
                 shots += len(info["shots"])
                 tags += len(info["tagged"])
+                env_tags[e] += len(info["tagged"])
                 if e in recorders:
                     probs = torch.cat([torch.softmax(lg[:, e], -1) for lg in split_logits(logits)], -1)
                     recorders[e].record(ob, info, {
@@ -95,10 +101,22 @@ class Trainer:
                         "probs": probs.numpy(), "value": value[:, e].numpy() / self.reward_scale})
 
         w = self.net.policy.weight.detach().numpy()
+        first_hit = None
+        if hunting:
+            hits = [e for e in range(E) if env_tags[e] > 0]
+            if hits:
+                first_hit = hits[0]
         for e, rec in recorders.items():
+            if not (should_record(numbers[e]) or e == first_hit):
+                continue
             path = os.path.join(self.out, "replays", f"match_{numbers[e]:06d}.json.gz")
             rec.save(path, policy_weights=w)
             print(f"  recorded match {numbers[e]} -> {path}")
+        if first_hit is not None:
+            with open(first_hit_marker, "w") as f:
+                json.dump({"match": numbers[first_hit], "file": f"match_{numbers[first_hit]:06d}.json.gz",
+                           "tags": env_tags[first_hit]}, f)
+            print(f"  first match with a tag: {numbers[first_hit]}")
 
         scores = np.array([g.team_scores() for g in games])
         self.matches_done += E

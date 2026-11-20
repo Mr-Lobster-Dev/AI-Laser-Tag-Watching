@@ -19,7 +19,7 @@ The simulator and training code are done; the website only needs to read replay 
 
 | Key | Meaning |
 |-----|---------|
-| `version` | Format version (2: adds 60 FPS `motion`). |
+| `version` | Format version (3: adds `tags` timeline markers; 2 added 60 FPS `motion`). |
 | `match` | Match number. |
 | `trained_matches` | Matches the networks had trained on before this one. |
 | `dt` | Seconds per step (0.1). |
@@ -30,6 +30,7 @@ The simulator and training code are done; the website only needs to read replay 
 | `frames` | Per-step state at 10 Hz (the simulation rate), flat arrays, index `[step * 8 + agent]` (see below). |
 | `motion` | Player movement at **60 FPS** for smooth playback (see below). |
 | `shots` | List of `{step, shooter, target, tag, end}`. `target` is an agent id or -1 (hit a wall or nothing); `tag` is true when it scored; `end` is the beam end point `[x, y, z]`. The beam starts at the shooter's eye. |
+| `tags` | Timeline markers, one per tag: `{step, frame, time_s, shooter, target, team, color}`. `team` is the team that **fired**, and `color` is that team's colour (green `#34c759`, pink `#ff5fa2`). `frame` is the 60 FPS frame. Ken wants every tag marked on the timeline scrubber in the shooting team's colour. |
 | `network` | Network activations for the inspector panel (see below). |
 
 ## `frames`

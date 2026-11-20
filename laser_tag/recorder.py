@@ -16,8 +16,9 @@ from .arena import WIDTH, DEPTH, WALL_H
 from .game import TEAM_NAMES, TEAM_SHAPES, DT, MATCH_STEPS, SEE_OPPONENT
 from .model import HEADS, ENC, HID
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 PLAYBACK_FPS = 60   # motion is saved at 60 frames per second for smooth playback
+TEAM_COLORS = {"green": "#34c759", "pink": "#ff5fa2"}
 KIND_NAMES = ["floor", "wall", "cover", "platform", "stair"]
 
 
@@ -89,6 +90,17 @@ class MatchRecorder:
         self.probs.append(_q(net["probs"], 0, 1))
         self.value.append(np.round(net["value"], 2))
 
+    def _tags(self):
+        """Timeline markers: one per tag, coloured by the team that fired."""
+        out = []
+        for sh in self.shots:
+            if sh["tag"]:
+                team = TEAM_NAMES[self.g.team[sh["shooter"]]]
+                out.append({"step": sh["step"], "frame": sh["step"] * int(PLAYBACK_FPS * DT),
+                            "time_s": round(sh["step"] * DT, 1), "shooter": sh["shooter"],
+                            "target": sh["target"], "team": team, "color": TEAM_COLORS[team]})
+        return out
+
     def _motion(self):
         p, y, pt = motion_60fps(np.array(self.pos), np.array(self.yaw), np.array(self.pitch),
                                 np.array(self.down))
@@ -123,6 +135,7 @@ class MatchRecorder:
             },
             "motion": self._motion(),
             "shots": self.shots,
+            "tags": self._tags(),
             "network": {
                 "heads": [{"name": n, "size": s} for n, s in HEADS],
                 "vision": {"rows": 8, "cols": 24, "data": _b64(np.array(self.vision))},
