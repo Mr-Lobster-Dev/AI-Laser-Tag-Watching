@@ -73,6 +73,13 @@ function decode(raw) {
     teamScores: Float32Array.from(f.team_scores),
   };
 
+  // 60 FPS movement (format v2). Older replays fall back to the 10 Hz frames.
+  const mo = raw.motion;
+  const motion = mo ? {
+    fps: mo.fps, frames: mo.frames, perStep: Math.round(mo.fps * raw.dt),
+    pos: Float32Array.from(mo.pos), yaw: Float32Array.from(mo.yaw), pitch: Float32Array.from(mo.pitch),
+  } : null;
+
   // Per-agent score over time, rebuilt from tag events (+5 tagger, -3 tagged).
   const agentScore = new Float32Array(S * N);
   const shotsByStep = new Map();
@@ -140,6 +147,7 @@ function decode(raw) {
     agents: raw.agents,
     finalScores: raw.final_scores,
     frames,
+    motion,
     shots: raw.shots,
     shotsByStep,
     tagSteps,

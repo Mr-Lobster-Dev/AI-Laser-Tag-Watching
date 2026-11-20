@@ -288,20 +288,31 @@ export class ArenaScene {
     const now = this.clock.elapsedTime;
     this.poses = this.poses || Array.from({ length: N }, () => ({ x: 0, y: 0, z: 0, yaw: 0, pitch: 0, crouch: 0, down: 0 }));
 
+    const mo = replay.motion;
+    // With 60 FPS motion, blend between motion frames; otherwise between 10 Hz steps.
+    const mt = mo ? Math.max(0, Math.min(mo.frames - 1, t * mo.perStep)) : 0;
+    const m0 = Math.floor(mt), m1 = Math.min((mo?.frames ?? 1) - 1, m0 + 1), ma = mt - m0;
     for (let i = 0; i < N; i++) {
       const A = this.agents[i];
       const k0 = s0 * N + i, k1 = s1 * N + i;
-      const x0 = fr.pos[k0 * 3], y0 = fr.pos[k0 * 3 + 1], z0 = fr.pos[k0 * 3 + 2];
-      const x1 = fr.pos[k1 * 3], y1 = fr.pos[k1 * 3 + 1], z1 = fr.pos[k1 * 3 + 2];
-      const jump = Math.hypot(x1 - x0, y1 - y0) > 1.5 || fr.down[k0] !== fr.down[k1];
-      const b = jump ? 0 : a;
       const p = this.poses[i];
-      p.x = x0 + (x1 - x0) * b;
-      p.y = y0 + (y1 - y0) * b;
-      p.z = z0 + (z1 - z0) * b;
-      p.yaw = lerpAngle(fr.yaw[k0], fr.yaw[k1], b);
-      p.pitch = fr.pitch[k0] + (fr.pitch[k1] - fr.pitch[k0]) * b;
-      p.crouch = fr.crouch[k0] + (fr.crouch[k1] - fr.crouch[k0]) * b;
+      if (mo) {
+        const j0 = m0 * N + i, j1 = m1 * N + i;
+        const x0 = mo.pos[j0 * 3], y0 = mo.pos[j0 * 3 + 1], z0 = mo.pos[j0 * 3 + 2];
+        const x1 = mo.pos[j1 * 3], y1 = mo.pos[j1 * 3 + 1], z1 = mo.pos[j1 * 3 + 2];
+        const b = Math.hypot(x1 - x0, y1 - y0) > 1 ? 0 : ma; // respawn jump
+        p.x = x0 + (x1 - x0) * b; p.y = y0 + (y1 - y0) * b; p.z = z0 + (z1 - z0) * b;
+        p.yaw = lerpAngle(mo.yaw[j0], mo.yaw[j1], b);
+        p.pitch = mo.pitch[j0] + (mo.pitch[j1] - mo.pitch[j0]) * b;
+      } else {
+        const x0 = fr.pos[k0 * 3], y0 = fr.pos[k0 * 3 + 1], z0 = fr.pos[k0 * 3 + 2];
+        const x1 = fr.pos[k1 * 3], y1 = fr.pos[k1 * 3 + 1], z1 = fr.pos[k1 * 3 + 2];
+        const b = Math.hypot(x1 - x0, y1 - y0) > 1.5 || fr.down[k0] !== fr.down[k1] ? 0 : a;
+        p.x = x0 + (x1 - x0) * b; p.y = y0 + (y1 - y0) * b; p.z = z0 + (z1 - z0) * b;
+        p.yaw = lerpAngle(fr.yaw[k0], fr.yaw[k1], b);
+        p.pitch = fr.pitch[k0] + (fr.pitch[k1] - fr.pitch[k0]) * b;
+      }
+      p.crouch = fr.crouch[k0] + (fr.crouch[k1] - fr.crouch[k0]) * a;
       p.down = fr.down[k0];
       const height = STAND_H + (CROUCH_H - STAND_H) * p.crouch;
       p.eye = STAND_EYE + (CROUCH_EYE - STAND_EYE) * p.crouch;
@@ -366,7 +377,11 @@ export class ArenaScene {
         const B = this.beams[used++];
         const k = st * N + s.shooter;
         const eye = (fr.crouch[k] ? CROUCH_EYE : STAND_EYE);
-        const start = new THREE.Vector3(fr.pos[k * 3], fr.pos[k * 3 + 1], fr.pos[k * 3 + 2] + eye);
+        // Start where the shot was fired (step pose), not where the shooter has moved since.
+        const mo = replay.motion;
+        const j = mo ? Math.min(mo.frames - 1, st * mo.perStep) * N + s.shooter : k;
+        const src = mo ? mo.pos : fr.pos;
+        const start = new THREE.Vector3(src[j * 3], src[j * 3 + 1], src[j * 3 + 2] + eye);
         const end = new THREE.Vector3(...s.end);
         const dir = end.clone().sub(start);
         const len = dir.length();
