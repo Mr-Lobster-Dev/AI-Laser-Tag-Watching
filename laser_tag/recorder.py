@@ -16,8 +16,29 @@ from .arena import WIDTH, DEPTH, WALL_H
 from .game import TEAM_NAMES, TEAM_SHAPES, DT, MATCH_STEPS, SEE_OPPONENT
 from .model import HEADS, ENC, HID
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+PLAYBACK_FPS = 60   # motion is saved at 60 frames per second for smooth playback
 KIND_NAMES = ["floor", "wall", "cover", "platform", "stair"]
+
+
+def motion_60fps(pos, yaw, pitch, down, sub=int(PLAYBACK_FPS * DT)):
+    """Upsample 10 Hz motion to 60 FPS by interpolating between simulation steps.
+
+    pos (S, N, 3), yaw/pitch/down (S, N). Returns arrays with (S - 1) * sub + 1 frames.
+    Yaw takes the short way round; respawns (and the frames around them) are not
+    interpolated, so players don't glide across the arena."""
+    S = pos.shape[0]
+    a = np.arange((S - 1) * sub + 1) / sub
+    i0 = np.minimum(a.astype(int), S - 1)
+    i1 = np.minimum(i0 + 1, S - 1)
+    f = (a - i0)[:, None]
+    jump = (np.linalg.norm(pos[i1, :, :2] - pos[i0, :, :2], axis=-1) > 1.0) | (down[i0] != down[i1])
+    f = np.where(jump, 0.0, f)
+    p = pos[i0] + (pos[i1] - pos[i0]) * f[..., None]
+    dy = (yaw[i1] - yaw[i0] + np.pi) % (2 * np.pi) - np.pi
+    y = (yaw[i0] + dy * f) % (2 * np.pi)
+    pt = pitch[i0] + (pitch[i1] - pitch[i0]) * f
+    return p, y, pt
 
 
 def _b64(arr):
@@ -68,6 +89,13 @@ class MatchRecorder:
         self.probs.append(_q(net["probs"], 0, 1))
         self.value.append(np.round(net["value"], 2))
 
+    def _motion(self):
+        p, y, pt = motion_60fps(np.array(self.pos), np.array(self.yaw), np.array(self.pitch),
+                                np.array(self.down))
+        return {"fps": PLAYBACK_FPS, "frames": int(p.shape[0]),
+                "pos": p.round(2).ravel().tolist(), "yaw": y.round(3).ravel().tolist(),
+                "pitch": pt.round(3).ravel().tolist()}
+
     def save(self, path, policy_weights=None):
         g = self.g
         steps = len(self.pos)
@@ -93,6 +121,7 @@ class MatchRecorder:
                 "radio": [c for row in self.radio for c in row],
                 "team_scores": np.array(self.scores).ravel().tolist(),
             },
+            "motion": self._motion(),
             "shots": self.shots,
             "network": {
                 "heads": [{"name": n, "size": s} for n, s in HEADS],
