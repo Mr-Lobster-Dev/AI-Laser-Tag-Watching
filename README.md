@@ -25,3 +25,11 @@ pip install -r requirements.txt
 python -m laser_tag.demo --map   # print the arena and play one match with random agents
 python -m pytest tests           # rule tests
 ```
+
+## Long training runs (GitHub Actions)
+
+`.github/workflows/train.yml` trains in 5.5-hour runs that chain into each other (with a 6-hourly
+schedule as a backup). Each run resumes from the `training-state` release (latest checkpoint and logs)
+and uploads new replays and milestone checkpoints to the `replays` release. Start a run by hand from
+the Actions tab with **Run workflow**. Repository variables: `TRAIN_UNTIL` (end time, default end of
+2026-12-02 Bangkok) and `HINTS_UNTIL` (first match without the aim and duel hints).
