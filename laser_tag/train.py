@@ -210,8 +210,11 @@ class Trainer:
                 w.writeheader()
             w.writerow(row)
 
-    def run(self, total_matches):
+    def run(self, total_matches, deadline=None):
         while self.matches_done < total_matches:
+            if deadline is not None and time.time() >= deadline:
+                print(f"Time limit reached after {self.matches_done} matches", flush=True)
+                break
             t0 = time.time()
             batch, stats = self.collect()
             t1 = time.time()
@@ -236,10 +239,13 @@ def main():
                     help="first match number that uses duel hints (+7 duel / +10 face-off)")
     ap.add_argument("--aim-from", type=int, default=None,
                     help="first match number that uses aim rewards (+1 sight / -1 seen)")
+    ap.add_argument("--max-minutes", type=float, default=None,
+                    help="stop cleanly (after the current batch) once this many minutes have passed")
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
+    deadline = time.time() + args.max_minutes * 60 if args.max_minutes else None
     Trainer(args.out, envs=args.envs, seed=args.seed, aim_from=args.aim_from, hints_from=args.hints_from,
-            hints_until=args.hints_until).run(args.matches)
+            hints_until=args.hints_until).run(args.matches, deadline)
 
 
 if __name__ == "__main__":

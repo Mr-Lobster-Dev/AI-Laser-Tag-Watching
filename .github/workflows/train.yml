@@ -1,0 +1,103 @@
+# Long-running laser tag training on GitHub Actions.
+#
+# Each run downloads the training state from the "training-state" release (latest
+# checkpoint + logs), trains for up to ~5.5 hours, uploads the new state, uploads any
+# new replays to the "replays" release, then starts the next run. A 6-hourly schedule
+# restarts the chain if a run ever fails to hand over.
+#
+# Settings (repository variables, Settings > Secrets and variables > Actions > Variables):
+#   TRAIN_UNTIL   ISO time after which no more training happens (default: end of 2026-12-02 Bangkok)
+#   HINTS_UNTIL   first match number with aim + duel hints switched off (unset = hints stay on)
+name: train
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: training
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OUT: ${{ github.workspace }}/out
+      TRAIN_UNTIL: ${{ vars.TRAIN_UNTIL || '2026-12-02T17:00:00Z' }}   # end of Dec 2, Bangkok time
+      HINTS_UNTIL: ${{ vars.HINTS_UNTIL }}
+    steps:
+      - name: Check end date
+        id: when
+        run: |
+          now=$(date -u +%s)
+          until=$(date -u -d "${TRAIN_UNTIL:-2100-01-01T00:00:00Z}" +%s)
+          left=$(( (until - now) / 60 ))
+          # Leave ~15 minutes of the 350-minute job for setup and uploads.
+          mins=$(( left < 330 ? left : 330 ))
+          echo "minutes=$mins" >> "$GITHUB_OUTPUT"
+          echo "Training minutes this run: $mins"
+
+      - uses: actions/checkout@v4
+        if: steps.when.outputs.minutes > 5
+
+      - uses: actions/setup-python@v5
+        if: steps.when.outputs.minutes > 5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        if: steps.when.outputs.minutes > 5
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install "numpy>=2.0" "numba>=0.60"
+
+      - name: Download training state
+        if: steps.when.outputs.minutes > 5
+        run: |
+          mkdir -p "$OUT/checkpoints" "$OUT/replays" state
+          # First run: create the releases and seed them from the training-seed branch.
+          gh release view replays >/dev/null 2>&1 || \
+            gh release create replays --prerelease --title replays --notes "Replays (every 100th match) and milestone checkpoints."
+          if ! gh release view training-state >/dev/null 2>&1; then
+            git fetch --depth 1 origin training-seed
+            mkdir -p seed && git --work-tree=seed checkout FETCH_HEAD -- .
+            gh release create training-state --prerelease --title training-state \
+              --notes "Latest training checkpoint and logs, updated after every run." \
+              seed/latest.pt seed/match_results.csv seed/train_log.csv seed/first_hit.json
+          fi
+          gh release download training-state -D state --clobber
+          mv state/latest.pt "$OUT/checkpoints/latest.pt"
+          mv state/match_results.csv state/train_log.csv "$OUT/"
+          mv state/first_hit.json "$OUT/replays/"
+          python -c "import torch; print('Resuming at match', torch.load('$OUT/checkpoints/latest.pt', weights_only=False)['matches_done'])"
+
+      - name: Train
+        if: steps.when.outputs.minutes > 5
+        run: |
+          extra=""
+          if [ -n "$HINTS_UNTIL" ]; then extra="--hints-until $HINTS_UNTIL"; fi
+          python -m laser_tag.train --out "$OUT" --envs 4 --threads "$(nproc)" \
+            --aim-from 701 --hints-from 2309 $extra \
+            --max-minutes "${{ steps.when.outputs.minutes }}" 2>&1 | tee train_stdout.log
+
+      - name: Upload training state and replays
+        if: always() && steps.when.outputs.minutes > 5
+        run: |
+          gh release upload training-state "$OUT/checkpoints/latest.pt" "$OUT/match_results.csv" \
+            "$OUT/train_log.csv" "$OUT/replays/first_hit.json" --clobber
+          shopt -s nullglob
+          files=("$OUT"/replays/*.json.gz "$OUT"/checkpoints/match_*.pt)
+          if [ ${#files[@]} -gt 0 ]; then gh release upload replays "${files[@]}" --clobber; fi
+          tail -3 train_stdout.log || true
+
+      - name: Start the next run
+        if: success() && steps.when.outputs.minutes > 30
+        run: gh workflow run train.yml --ref "${{ github.ref_name }}"
