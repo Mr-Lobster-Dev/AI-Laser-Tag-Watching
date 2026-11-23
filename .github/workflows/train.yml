@@ -7,7 +7,7 @@
 #
 # Settings (repository variables, Settings > Secrets and variables > Actions > Variables):
 #   TRAIN_UNTIL   ISO time after which no more training happens (default: end of 2026-12-02 Bangkok)
-#   HINTS_UNTIL   first match number with aim + duel hints switched off (default 12625)
+#   HINTS_UNTIL   first match number with aim + duel hints switched off (unset = hints stay on)
 name: train
 
 on:
@@ -31,7 +31,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       OUT: ${{ github.workspace }}/out
       TRAIN_UNTIL: ${{ vars.TRAIN_UNTIL || '2026-12-02T17:00:00Z' }}   # end of Dec 2, Bangkok time
-      HINTS_UNTIL: ${{ vars.HINTS_UNTIL || '12625' }}   # hints off: last 300 matches averaged 1.79 tags by match 12624
+      HINTS_UNTIL: ${{ vars.HINTS_UNTIL }}   # unset = hints on (they were off from match 17453 for one run)
     steps:
       - name: Check end date
         id: when
