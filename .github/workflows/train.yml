@@ -95,7 +95,20 @@ jobs:
             "$OUT/train_log.csv" "$OUT/replays/first_hit.json" --clobber
           shopt -s nullglob
           files=("$OUT"/replays/*.json.gz "$OUT"/checkpoints/match_*.pt)
-          if [ ${#files[@]} -gt 0 ]; then gh release upload replays "${files[@]}" --clobber; fi
+          if [ ${#files[@]} -gt 0 ]; then
+            # GitHub caps a release at 1000 files, so roll over to replays-2, replays-3, ... when full.
+            rel=replays; i=1
+            while :; do
+              gh release view "$rel" >/dev/null 2>&1 || gh release create "$rel" --prerelease --title "$rel" \
+                --notes "Replays (every 100th match) and milestone checkpoints, continued (a release holds at most 1000 files)."
+              rid=$(gh api "repos/${{ github.repository }}/releases/tags/$rel" --jq '.id')
+              n=$(gh api --paginate "repos/${{ github.repository }}/releases/$rid/assets?per_page=100" --jq 'length' | awk '{s+=$1} END {print s+0}')
+              if [ $((n + ${#files[@]})) -le 1000 ] || [ "$i" -ge 20 ]; then break; fi
+              i=$((i + 1)); rel="replays-$i"
+            done
+            echo "Uploading ${#files[@]} replay files to $rel (had $n)"
+            gh release upload "$rel" "${files[@]}" --clobber || echo "::warning::Replay upload to $rel failed"
+          fi
           tail -3 train_stdout.log || true
 
       - name: Start the next run
